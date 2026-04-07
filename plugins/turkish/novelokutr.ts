@@ -1,13 +1,14 @@
-v import { load as parseHTML } from 'cheerio';
-import { fetchApi } from '@libs/fetch';
-import { Plugin } from '@/types/plugin';
+import { fetchApi, fetchFile } from "@libs/fetch";
+import { Plugin } from "@/types/plugin";
+import { Filters } from "@libs/filterInputs";
+import { load as parseHTML } from "cheerio";
 
 class NovelOkuTR implements Plugin.PluginBase {
   id = "novelokutr.net";
   name = "Novel Oku TR";
   icon = "src/tr/novelokutr/icon.png";
   site = "https://novelokutr.net/";
-  version = "1.0.2";
+  version = "1.0.3";
   filters: Filters | undefined = undefined;
 
   async popularNovels(
@@ -86,11 +87,15 @@ class NovelOkuTR implements Plugin.PluginBase {
       .filter(Boolean)
       .join("\n");
 
-    const postId =
-      (body.match(/["'](manga|post)_id["']\s*:\s*["']?(\d+)["']?/))?.[2] ||
-      (body.match(/data-id=["'](\d+)["']/))?.[1] ||
-      (body.match(/manga_id[^\d]+(\d+)/))?.[1] ||
-      null;
+    // postId — regex'leri ayrı değişkenlere al (minifier karışmasın)
+    const m1 = body.match(/["'](manga|post)_id["']\s*:\s*["']?(\d+)["']?/);
+    const m2 = body.match(/data-id=["'](\d+)["']/);
+    const m3 = body.match(/manga_id[^\d]+(\d+)/);
+    const postId = m1?.[2] || m2?.[1] || m3?.[1] || null;
+
+    // Nonce — her sayfada değişir, HTML'den çek
+    const mn = body.match(/["']nonce["']\s*:\s*["']([a-f0-9]+)["']/);
+    const nonce = mn?.[1] || "";
 
     let chapters: Plugin.ChapterItem[] = [];
 
@@ -106,6 +111,7 @@ class NovelOkuTR implements Plugin.PluginBase {
         body: new URLSearchParams({
           action: "manga_get_chapters",
           manga: postId,
+          "wp-manga-login-nonce": nonce,
         }).toString(),
       });
 
