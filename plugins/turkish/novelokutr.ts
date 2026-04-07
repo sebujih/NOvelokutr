@@ -1,5 +1,5 @@
 import { fetchApi, fetchFile } from "@libs/fetch";
-import { Plugin } from "@typings/plugin";
+import { Plugin } from "@/types/plugin";
 import { Filters } from "@libs/filterInputs";
 import { load as parseHTML } from "cheerio";
 
@@ -7,36 +7,32 @@ class NovelOkuTR implements Plugin.PluginBase {
   id = "novelokutr.net";
   name = "Novel Oku TR";
   icon = "src/tr/novelokutr/icon.png";
-  site = "https://novelokutr.net";
+  site = "https://novelokutr.net/";
   version = "1.0.2";
   filters: Filters | undefined = undefined;
 
   async popularNovels(
     page: number,
-    { showLatestNovels }: Plugin.PopularNovelsOptions,
+    { showLatestNovels }: Plugin.PopularNovelsOptions
   ): Promise<Plugin.NovelItem[]> {
-    // Latest: ana sayfa /page/N/
-    // Popular: /manga/page/N/?m_orderby=views
     const url = showLatestNovels
-      ? `${this.site}/page/${page}/`
-      : `${this.site}/manga/page/${page}/?m_orderby=views`;
+      ? `${this.site}page/${page}/`
+      : `${this.site}manga/page/${page}/?m_orderby=views`;
 
     const body = await fetchApi(url).then((r) => r.text());
     const $ = parseHTML(body);
 
     const novels: Plugin.NovelItem[] = [];
 
-    // Ana sayfada: div.page-item-detail.text
     $("div.page-item-detail").each((_, el) => {
-      // Kapak linki item-thumb içinde
       const thumbAnchor = $(el).find("div.item-thumb a").first();
-      // Başlık post-title içinde
       const titleAnchor = $(el).find("div.post-title a, h3.h5 a").first();
 
-      const name = titleAnchor.text().trim() || thumbAnchor.attr("title") || "";
-      const path = thumbAnchor.attr("href") || titleAnchor.attr("href") || "";
+      const name =
+        titleAnchor.text().trim() || thumbAnchor.attr("title") || "";
+      const path =
+        thumbAnchor.attr("href") || titleAnchor.attr("href") || "";
 
-      // data-src önce, sonra src
       const cover =
         $(el).find("img").first().attr("data-src") ||
         $(el).find("img").first().attr("src") ||
@@ -65,7 +61,8 @@ class NovelOkuTR implements Plugin.PluginBase {
 
     novel.cover =
       $("div.summary_image img").attr("data-src") ||
-      $("div.summary_image img").attr("src") || "";
+      $("div.summary_image img").attr("src") ||
+      "";
 
     const authors: string[] = [];
     $("div.author-content a").each((_, el) => {
@@ -74,7 +71,9 @@ class NovelOkuTR implements Plugin.PluginBase {
     if (authors.length) novel.author = authors.join(", ");
 
     novel.status = $("div.post-status div.summary-content")
-      .first().text().trim();
+      .first()
+      .text()
+      .trim();
 
     const genres: string[] = [];
     $("div.genres-content a").each((_, el) => {
@@ -84,11 +83,12 @@ class NovelOkuTR implements Plugin.PluginBase {
 
     novel.summary = $("div.summary__content p, div.description-summary p")
       .map((_, el) => $(el).text().trim())
-      .get().filter(Boolean).join("\n");
+      .get()
+      .filter(Boolean)
+      .join("\n");
 
-    // postId — data-id genellikle item-thumb div'inde olur
     const postId =
-      (body.match(/['"](manga|post)_id['"]\s*:\s*['"]?(\d+)['"]?/))?.[2] ||
+      (body.match(/["'](manga|post)_id["']\s*:\s*["']?(\d+)["']?/))?.[2] ||
       (body.match(/data-id=["'](\d+)["']/))?.[1] ||
       (body.match(/manga_id[^\d]+(\d+)/))?.[1] ||
       null;
@@ -96,12 +96,12 @@ class NovelOkuTR implements Plugin.PluginBase {
     let chapters: Plugin.ChapterItem[] = [];
 
     if (postId) {
-      const ajaxUrl = `${this.site}/wp-admin/admin-ajax.php`;
+      const ajaxUrl = `${this.site}wp-admin/admin-ajax.php`;
       const resp = await fetchApi(ajaxUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
-          "Referer": this.site + novelPath,
+          Referer: this.site + novelPath,
           "X-Requested-With": "XMLHttpRequest",
         },
         body: new URLSearchParams({
@@ -120,7 +120,9 @@ class NovelOkuTR implements Plugin.PluginBase {
           const chName = a.text().trim();
           const releaseDate = $ch(el)
             .find("span.chapter-release-date i, span.chapter-release-date")
-            .first().text().trim();
+            .first()
+            .text()
+            .trim();
 
           if (chName && chPath) {
             chapters.push({
@@ -142,7 +144,9 @@ class NovelOkuTR implements Plugin.PluginBase {
         const chName = a.text().trim();
         const releaseDate = $(el)
           .find("span.chapter-release-date i, span.chapter-release-date")
-          .first().text().trim();
+          .first()
+          .text()
+          .trim();
 
         if (chName && chPath) {
           chapters.push({
@@ -167,20 +171,30 @@ class NovelOkuTR implements Plugin.PluginBase {
     const body = await fetchApi(this.site + chapterPath).then((r) => r.text());
     const $ = parseHTML(body);
 
-    $("div.reading-content").find([
-      ".code-block", "script", "ins", "noscript",
-      ".ezoic-ad", "[id*='ad']", "[class*='ad-']",
-      "[class*='adsbygoogle']", ".sharedaddy",
-    ].join(", ")).remove();
+    $("div.reading-content")
+      .find(
+        [
+          ".code-block",
+          "script",
+          "ins",
+          "noscript",
+          ".ezoic-ad",
+          "[id*='ad']",
+          "[class*='ad-']",
+          "[class*='adsbygoogle']",
+          ".sharedaddy",
+        ].join(", ")
+      )
+      .remove();
 
     return $("div.reading-content").html() || "";
   }
 
   async searchNovels(
     searchTerm: string,
-    page: number,
+    page: number
   ): Promise<Plugin.NovelItem[]> {
-    const url = `${this.site}/?s=${encodeURIComponent(searchTerm)}&post_type=wp-manga&page=${page}`;
+    const url = `${this.site}?s=${encodeURIComponent(searchTerm)}&post_type=wp-manga&page=${page}`;
     const body = await fetchApi(url).then((r) => r.text());
     const $ = parseHTML(body);
 
@@ -188,15 +202,20 @@ class NovelOkuTR implements Plugin.PluginBase {
 
     $("div.page-item-detail, div.c-tabs-item__content").each((_, el) => {
       const titleAnchor = $(el)
-        .find("div.post-title a, div.tab-title a, h3 a, h5 a").first();
+        .find("div.post-title a, div.tab-title a, h3 a, h5 a")
+        .first();
       const thumbAnchor = $(el)
-        .find("div.item-thumb a, div.tab-thumb a").first();
+        .find("div.item-thumb a, div.tab-thumb a")
+        .first();
 
-      const name = titleAnchor.text().trim() || thumbAnchor.attr("title") || "";
-      const path = thumbAnchor.attr("href") || titleAnchor.attr("href") || "";
+      const name =
+        titleAnchor.text().trim() || thumbAnchor.attr("title") || "";
+      const path =
+        thumbAnchor.attr("href") || titleAnchor.attr("href") || "";
       const cover =
         $(el).find("img").first().attr("data-src") ||
-        $(el).find("img").first().attr("src") || "";
+        $(el).find("img").first().attr("src") ||
+        "";
 
       if (name && path) {
         novels.push({
@@ -214,3 +233,5 @@ class NovelOkuTR implements Plugin.PluginBase {
     return fetchFile(url);
   }
 }
+
+export default new NovelOkuTR();
