@@ -8,20 +8,24 @@ class NovelOkuTR implements Plugin.PluginBase {
   name = "Novel Oku TR";
   icon = "src/tr/novelokutr/icon.png";
   site = "https://novelokutr.net/";
-  version = "1.0.3";
+  version = "1.0.4";
   filters: Filters | undefined = undefined;
 
   async popularNovels(
     page: number,
     { showLatestNovels }: Plugin.PopularNovelsOptions
   ): Promise<Plugin.NovelItem[]> {
+    // Site /novel/ prefix kullanıyor, /manga/ değil
     const url = showLatestNovels
-      ? `${this.site}page/${page}/`
-      : `${this.site}manga/page/${page}/?m_orderby=views`;
+      ? page === 1
+        ? `${this.site}`
+        : `${this.site}page/${page}/`
+      : page === 1
+        ? `${this.site}novel/?m_orderby=views`
+        : `${this.site}novel/page/${page}/?m_orderby=views`;
 
     const body = await fetchApi(url).then((r) => r.text());
     const $ = parseHTML(body);
-
     const novels: Plugin.NovelItem[] = [];
 
     $("div.page-item-detail").each((_, el) => {
@@ -32,7 +36,6 @@ class NovelOkuTR implements Plugin.PluginBase {
         titleAnchor.text().trim() || thumbAnchor.attr("title") || "";
       const path =
         thumbAnchor.attr("href") || titleAnchor.attr("href") || "";
-
       const cover =
         $(el).find("img").first().attr("data-src") ||
         $(el).find("img").first().attr("src") ||
@@ -87,38 +90,36 @@ class NovelOkuTR implements Plugin.PluginBase {
       .filter(Boolean)
       .join("\n");
 
-    // postId — regex'leri ayrı değişkenlere al (minifier karışmasın)
+    // postId
     const m1 = body.match(/["'](manga|post)_id["']\s*:\s*["']?(\d+)["']?/);
     const m2 = body.match(/data-id=["'](\d+)["']/);
     const m3 = body.match(/manga_id[^\d]+(\d+)/);
     const postId = m1?.[2] || m2?.[1] || m3?.[1] || null;
 
-    // Nonce — her sayfada değişir, HTML'den çek
-    const mn = body.match(/["']nonce["']\s*:\s*["']([a-f0-9]+)["']/);
+    // Nonce: wpMangaLogin objesi içinde geliyor — "nonce":"c0660f6a9d"
+    const mn =
+      body.match(/wpMangaLogin[^}]*"nonce"\s*:\s*"([a-f0-9]+)"/) ||
+      body.match(/"nonce"\s*:\s*"([a-f0-9]{6,})"/) ||
+      body.match(/'nonce'\s*:\s*'([a-f0-9]{6,})'/);
     const nonce = mn?.[1] || "";
 
     let chapters: Plugin.ChapterItem[] = [];
 
-    if (postId) {
-      const ajaxUrl = `${this.site}wp-admin/admin-ajax.php`;
-      const resp = await fetchApi(ajaxUrl, {
+    // Yöntem 1: /ajax/chapters/ — Madara standart endpoint
+    try {
+      const ajaxChapUrl = `${this.site}${novelPath}ajax/chapters/`;
+      const resp = await fetchApi(ajaxChapUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
           Referer: this.site + novelPath,
           "X-Requested-With": "XMLHttpRequest",
         },
-        body: new URLSearchParams({
-          action: "manga_get_chapters",
-          manga: postId,
-          "wp-manga-login-nonce": nonce,
-        }).toString(),
+        body: "",
       });
-
-      const chapterBody = await resp.text();
-
-      if (chapterBody && chapterBody !== "0" && chapterBody.trim() !== "") {
-        const $ch = parseHTML(chapterBody);
+      const chBody = await resp.text();
+      if (chBody && chBody !== "0" && chBody.trim().length > 10) {
+        const $ch = parseHTML(chBody);
         $ch("li.wp-manga-chapter").each((_, el) => {
           const a = $ch(el).find("a").first();
           const chPath = a.attr("href") || "";
@@ -128,7 +129,6 @@ class NovelOkuTR implements Plugin.PluginBase {
             .first()
             .text()
             .trim();
-
           if (chName && chPath) {
             chapters.push({
               name: chName,
@@ -139,9 +139,50 @@ class NovelOkuTR implements Plugin.PluginBase {
           }
         });
       }
+    } catch (_) {}
+
+    // Yöntem 2: admin-ajax.php fallback
+    if (chapters.length === 0 && postId) {
+      try {
+        const resp = await fetchApi(`${this.site}wp-admin/admin-ajax.php`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            Referer: this.site + novelPath,
+            "X-Requested-With": "XMLHttpRequest",
+          },
+          body: new URLSearchParams({
+            action: "manga_get_chapters",
+            manga: postId,
+            "wp-manga-login-nonce": nonce,
+          }).toString(),
+        });
+        const chapterBody = await resp.text();
+        if (chapterBody && chapterBody !== "0" && chapterBody.trim().length > 10) {
+          const $ch = parseHTML(chapterBody);
+          $ch("li.wp-manga-chapter").each((_, el) => {
+            const a = $ch(el).find("a").first();
+            const chPath = a.attr("href") || "";
+            const chName = a.text().trim();
+            const releaseDate = $ch(el)
+              .find("span.chapter-release-date i, span.chapter-release-date")
+              .first()
+              .text()
+              .trim();
+            if (chName && chPath) {
+              chapters.push({
+                name: chName,
+                path: chPath.replace(this.site, ""),
+                releaseTime: releaseDate || undefined,
+                chapterNumber: 0,
+              });
+            }
+          });
+        }
+      } catch (_) {}
     }
 
-    // Fallback: AJAX boş geldiyse HTML'den çek
+    // Yöntem 3: Direkt HTML fallback
     if (chapters.length === 0) {
       $("li.wp-manga-chapter").each((_, el) => {
         const a = $(el).find("a").first();
@@ -152,7 +193,6 @@ class NovelOkuTR implements Plugin.PluginBase {
           .first()
           .text()
           .trim();
-
         if (chName && chPath) {
           chapters.push({
             name: chName,
@@ -202,7 +242,6 @@ class NovelOkuTR implements Plugin.PluginBase {
     const url = `${this.site}?s=${encodeURIComponent(searchTerm)}&post_type=wp-manga&page=${page}`;
     const body = await fetchApi(url).then((r) => r.text());
     const $ = parseHTML(body);
-
     const novels: Plugin.NovelItem[] = [];
 
     $("div.page-item-detail, div.c-tabs-item__content").each((_, el) => {
