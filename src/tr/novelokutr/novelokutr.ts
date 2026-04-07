@@ -8,7 +8,7 @@ class NovelOkuTR implements Plugin.PluginBase {
   name = "Novel Oku TR";
   icon = "src/tr/novelokutr/icon.png";
   site = "https://novelokutr.net";
-  version = "1.0.1";
+  version = "1.0.2";
   filters: Filters | undefined = undefined;
 
   // ─── Popular / Latest Novels ───────────────────────────────────────────────
