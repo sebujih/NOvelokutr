@@ -1,7 +1,6 @@
-import { CheerioAPI, load as parseHTML } from 'cheerio';
+v import { load as parseHTML } from 'cheerio';
 import { fetchApi } from '@libs/fetch';
 import { Plugin } from '@/types/plugin';
-import { Filters, FilterTypes } from '@libs/filterInputs';
 
 class NovelOkuTR implements Plugin.PluginBase {
   id = "novelokutr.net";
